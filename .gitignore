@@ -1,0 +1,7 @@
+# downloaded data & run artifacts — never commit these
+photos/
+.dltmp/
+.cookies.txt
+*.log
+broken_on_server.txt
+failed_transient.txt
