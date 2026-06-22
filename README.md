@@ -91,9 +91,11 @@ picks up where it left off — no duplicates, no re-downloading.
   full-size picture *and* its thumbnail. These cannot be downloaded by any tool or
   browser; they are listed in `broken_on_server.txt` so you can ask the kindergarten
   to re-upload them.
-- **Merged folders.** If two top-level albums have the *same name* (the gallery allows
-  it), they land in one folder on disk. Filenames are keyed by each photo's unique id,
-  so nothing is overwritten — the photos are simply combined.
+- **Duplicate folder names.** If two sibling folders share the same name (the gallery
+  allows it — and Windows additionally treats names case-insensitively, e.g.
+  `HRUŠTIČKA` vs `Hruštička`), the first keeps the name and each further one gets a
+  `_2`, `_3`, … suffix, so every album ends up in its own separate folder. The
+  numbering follows the gallery's own order, so it stays the same on re-runs.
 - **Filenames.** Each file is named `NNNNN_<photo-id>.<ext>` (a per-album running
   number plus the gallery's own id), and the type (jpg/png/gif/webp) is detected from
   the file contents.

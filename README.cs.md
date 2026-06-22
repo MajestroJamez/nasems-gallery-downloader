@@ -89,9 +89,11 @@ naváže tam, kde skončil — žádné duplikáty, žádné stahování znovu.
   — server vrátí `HTTP 200`, ale žádná data neposílá, a to jak u plné velikosti, tak u
   náhledu. Takové fotky nedokáže stáhnout žádný nástroj ani prohlížeč; jsou vypsané v
   `broken_on_server.txt`, abyste mohli školku požádat o jejich nové nahrání.
-- **Sloučené složky.** Pokud mají dvě alba na nejvyšší úrovni **stejný název** (galerie
-  to umožňuje), skončí na disku v jedné složce. Názvy souborů vychází z unikátního id
-  každé fotky, takže se nic nepřepíše — fotky se jen sloučí dohromady.
+- **Stejné názvy složek.** Pokud mají dvě sousední složky stejný název (galerie to
+  umožňuje — a Windows navíc názvy nerozlišuje podle velikosti písmen, např.
+  `HRUŠTIČKA` vs `Hruštička`), první si název ponechá a každá další dostane příponu
+  `_2`, `_3`, … takže každé album skončí ve své vlastní samostatné složce. Číslování
+  jde podle pořadí v galerii, takže zůstává stejné i při opakovaném spuštění.
 - **Názvy souborů.** Každý soubor se jmenuje `NNNNN_<id-fotky>.<přípona>` (pořadové
   číslo v rámci alba + vlastní id z galerie) a typ (jpg/png/gif/webp) se rozpozná podle
   obsahu souboru.

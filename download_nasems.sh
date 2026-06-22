@@ -13,6 +13,10 @@
 # Requires: bash, curl, jq, file (all present in Git Bash / Linux / macOS).
 set -uo pipefail
 
+# Use a UTF-8 locale so ${name,,} folds accented letters (e.g. Š->š) when
+# de-duplicating folder names. Harmless if the locale is already UTF-8.
+export LC_ALL="${LC_ALL:-C.UTF-8}" LANG="${LANG:-C.UTF-8}"
+
 BASE="${NASEMS_URL:-https://nasems.cz}"
 GALLERY="$BASE/prihlaseno/fotogalerie"
 LOGIN="${NASEMS_LOGIN:-${1:-}}"
@@ -32,6 +36,9 @@ BROKENLIST="$(cd "$(dirname "$0")" && pwd)/broken_on_server.txt"
 FAILLIST="$(cd "$(dirname "$0")" && pwd)/failed_transient.txt"
 : > "$BROKENLIST"
 : > "$FAILLIST"
+# tracks how many sibling folders already used a given (case-insensitive) name,
+# so duplicates get a _2 / _3 / ... suffix instead of merging into one folder
+declare -A SEEN_CHILD
 
 log(){ printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2; }
 
@@ -149,6 +156,14 @@ recurse(){
   # current folder name (from <label> inside podnadpis)
   title="$(printf '%s' "$html" | grep -oE '<label>[^<]*</label>' | head -1 | sed -E 's/<\/?label>//g')"
   title="$(sanitize "${title:-slozka_$slozka}")"
+  # de-duplicate sibling folders that resolve to the same name (compared
+  # case-insensitively, as Windows does): the first keeps the name, the next
+  # ones get a _2 / _3 / ... suffix so they no longer merge into one folder.
+  local key n
+  key="$parent/${title,,}"
+  n=$(( ${SEEN_CHILD["$key"]:-0} + 1 ))
+  SEEN_CHILD["$key"]=$n
+  [ "$n" -gt 1 ] && title="${title}_$n"
   path="$parent/$title"
 
   # child folder ids = container divs

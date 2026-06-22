@@ -41,6 +41,9 @@ $FailList   = Join-Path $Root 'failed_transient.txt'
 [System.IO.File]::WriteAllText($FailList, '')
 
 $script:session = $null
+# tracks how many sibling folders already used a given (case-insensitive) name,
+# so duplicates get a _2 / _3 / ... suffix instead of merging into one folder
+$script:SeenChild = @{}
 
 function Log($msg) {
     Write-Host ('{0} {1}' -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'), $msg)
@@ -173,7 +176,14 @@ function Recurse($slozka, $parent) {
     $m = [regex]::Match($html, '<label>([^<]*)</label>')
     $title = if ($m.Success) { $m.Groups[1].Value } else { "slozka_$slozka" }
     $title = Sanitize $title
-    $path  = Join-Path $parent $title
+    # de-duplicate sibling folders that resolve to the same name (compared
+    # case-insensitively, as Windows does): the first keeps the name, the next
+    # ones get a _2 / _3 / ... suffix so they no longer merge into one folder.
+    $key = $parent + '||' + $title.ToLowerInvariant()
+    $n = [int]$script:SeenChild[$key] + 1
+    $script:SeenChild[$key] = $n
+    if ($n -gt 1) { $title = "${title}_$n" }
+    $path = Join-Path $parent $title
 
     # child folder ids = container divs
     $children = @([regex]::Matches($html, "<div class='container '[^>]*id='(\d+)'") |
