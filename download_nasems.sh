@@ -56,6 +56,14 @@ sanitize(){
   printf '%s' "$s"
 }
 
+# case-fold a name for duplicate detection (matches how Windows compares names).
+# Locale-independent: ASCII via tr, plus an explicit map of Czech accented
+# capitals, so e.g. "HRUŠTIČKA" and "Hruštička" produce the same key.
+foldkey(){
+  printf '%s' "$1" | tr 'A-Z' 'a-z' \
+    | sed 's/Á/á/g;s/Č/č/g;s/Ď/ď/g;s/É/é/g;s/Ě/ě/g;s/Í/í/g;s/Ň/ň/g;s/Ó/ó/g;s/Ř/ř/g;s/Š/š/g;s/Ť/ť/g;s/Ú/ú/g;s/Ů/ů/g;s/Ý/ý/g;s/Ž/ž/g'
+}
+
 login(){
   log "Logging in as $LOGIN ..."
   curl -s -c "$COOKIES" "$BASE/" -o /dev/null
@@ -160,7 +168,7 @@ recurse(){
   # case-insensitively, as Windows does): the first keeps the name, the next
   # ones get a _2 / _3 / ... suffix so they no longer merge into one folder.
   local key n
-  key="$parent/${title,,}"
+  key="$parent/$(foldkey "$title")"
   n=$(( ${SEEN_CHILD["$key"]:-0} + 1 ))
   SEEN_CHILD["$key"]=$n
   [ "$n" -gt 1 ] && title="${title}_$n"
