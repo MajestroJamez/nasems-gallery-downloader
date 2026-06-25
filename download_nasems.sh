@@ -102,9 +102,11 @@ download_photo(){
   local token="${url##*/}"
   local base
   base="$(printf '%05d_%s' "$idx" "$token")"
-  # skip only if already downloaded as a NON-EMPTY file; drop empty/corrupt prior tries
+  # Skip if this photo is already saved as a NON-EMPTY file. Match by TOKEN at
+  # any index (not idx_token): albums can be reordered/extended between runs, so
+  # a position-based check would re-download shifted photos and create duplicates.
   local existing
-  existing="$(ls "$destdir/$base".* 2>/dev/null | head -1)"
+  existing="$(find "$destdir" -maxdepth 1 -type f -name "*_$token.*" 2>/dev/null | head -1)"
   if [ -n "$existing" ]; then
     if [ -s "$existing" ]; then return 0; fi
     rm -f "$existing"

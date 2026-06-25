@@ -118,8 +118,10 @@ function Download-Photo($url, $destdir, $idx) {
     $token = $url.Substring($url.LastIndexOf('/') + 1)
     $base  = '{0:D5}_{1}' -f $idx, $token
 
-    # skip if already downloaded as a NON-EMPTY file; drop empty/corrupt prior tries
-    $existing = @(Get-ChildItem -LiteralPath $destdir -Filter "$base.*" -File -ErrorAction SilentlyContinue)
+    # Skip if this photo is already saved as a NON-EMPTY file. Match by TOKEN at
+    # any index (not idx_token): albums can be reordered/extended between runs, so
+    # a position-based check would re-download shifted photos and create duplicates.
+    $existing = @(Get-ChildItem -LiteralPath $destdir -Filter "*_$token.*" -File -ErrorAction SilentlyContinue)
     if ($existing.Count -gt 0) {
         if ($existing[0].Length -gt 0) { return }
         Remove-Item -LiteralPath $existing[0].FullName -Force -ErrorAction SilentlyContinue
