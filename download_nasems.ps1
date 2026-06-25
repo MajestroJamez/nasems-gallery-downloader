@@ -128,18 +128,17 @@ function Download-Photo($url, $destdir, $idx) {
     }
 
     $tmp = Join-Path $TmpDir "$base.part"   # ASCII scratch path; moved into (Unicode) destdir after
-    $allempty = $true
+    $empties = 0
 
     for ($attempt = 1; $attempt -le 5; $attempt++) {
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
-        $emptyResp = $false
+        $serverEmpty = $false
         try {
             Invoke-WebRequest -Uri $url -WebSession $script:session -OutFile $tmp `
                 -UseBasicParsing -TimeoutSec 90
             if (Test-Path -LiteralPath $tmp) {
-                $len = (Get-Item -LiteralPath $tmp).Length
-                if ($len -eq 0) {
-                    $emptyResp = $true                        # HTTP 200 + 0 bytes
+                if ((Get-Item -LiteralPath $tmp).Length -eq 0) {
+                    $serverEmpty = $true                      # HTTP 200 + 0 bytes
                 } else {
                     $ext = Get-ImageExt $tmp
                     if ($ext) {
@@ -153,22 +152,28 @@ function Download-Photo($url, $destdir, $idx) {
         } catch {
             # connection error / non-2xx -> transient
         }
-        if (-not $emptyResp) { $allempty = $false }
+        if ($serverEmpty) {
+            # HTTP 200 + empty body = the image is 0 bytes at the source. This is
+            # deterministic, so DON'T re-login/hammer the server; one quick re-check
+            # (no login) then record it as broken and move on.
+            $empties++
+            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            if ($empties -ge 2) {
+                Log "    SERVER-EMPTY (0 bytes at source, unrecoverable): $url"
+                Add-Content -LiteralPath $BrokenList -Value $url -Encoding UTF8
+                return
+            }
+            Start-Sleep -Seconds 1
+            continue
+        }
+        # transient: connection error / non-2xx / non-image body -> re-login + backoff
         Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
         Log "    retry $attempt for $token (re-login)"
         Login
         Start-Sleep -Seconds ($attempt * 2)
     }
-
-    if ($allempty) {
-        # every attempt returned 200 + 0 bytes (even after a fresh login) ->
-        # the photo is empty at the source and cannot be downloaded by anyone
-        Log "    SERVER-EMPTY (0 bytes at source, unrecoverable): $url"
-        Add-Content -LiteralPath $BrokenList -Value $url -Encoding UTF8
-    } else {
-        Log "    ! failed after retries: $url"
-        Add-Content -LiteralPath $FailList -Value $url -Encoding UTF8
-    }
+    Log "    ! failed after retries: $url"
+    Add-Content -LiteralPath $FailList -Value $url -Encoding UTF8
 }
 
 function Recurse($slozka, $parent) {
@@ -204,8 +209,22 @@ function Recurse($slozka, $parent) {
 
     [void][System.IO.Directory]::CreateDirectory($path)
     Log "ALBUM:  $path  -> $($photos.Count) photos"
+    # list the album's already-downloaded (non-empty) photo tokens ONCE, so the
+    # skip test below is an in-memory lookup instead of a filesystem scan per photo.
+    $have = @{}
+    foreach ($fi in (Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue)) {
+        if ($fi.Length -gt 0) {
+            $nm = $fi.BaseName                                # idx_token
+            $have[$nm.Substring($nm.IndexOf('_') + 1)] = $true
+        }
+    }
     $idx = 0
-    foreach ($u in $photos) { $idx++; Download-Photo $u $path $idx }
+    foreach ($u in $photos) {
+        $idx++
+        $tok = $u.Substring($u.LastIndexOf('/') + 1)
+        if ($have.ContainsKey($tok)) { continue }             # already downloaded -> skip
+        Download-Photo $u $path $idx
+    }
 }
 
 function Main {

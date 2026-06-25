@@ -114,45 +114,50 @@ download_photo(){
 
   # temp file lives in the ASCII scratch dir ($base = idx_token, both ASCII);
   # curl writes here, then bash mv places it into the (possibly Unicode) destdir
-  local tmp="$TMPD/$base.part" attempt mime ext code cexit allempty=1
+  local tmp="$TMPD/$base.part" attempt mime ext code cexit empties=0
   for attempt in 1 2 3 4 5; do
     rm -f "$tmp"
     code="$(curl -s --max-time 90 -b "$COOKIES" -o "$tmp" -w '%{http_code}' "$url")"
     cexit=$?
-    if [ "$cexit" -eq 0 ] && [ "$code" = "200" ] && [ -s "$tmp" ]; then
-      mime="$(file -b --mime-type "$tmp" 2>/dev/null)"
-      case "$mime" in
-        image/jpeg) ext=jpg ;;
-        image/png)  ext=png ;;
-        image/gif)  ext=gif ;;
-        image/webp) ext=webp ;;
-        image/*)    ext="${mime##*/}" ;;
-        *)  ext="" ;;   # not an image -> treat as failure below
-      esac
-      if [ -n "$ext" ]; then
-        mv -f "$tmp" "$destdir/$base.$ext"
-        return 0
+    if [ "$cexit" -eq 0 ] && [ "$code" = "200" ]; then
+      if [ -s "$tmp" ]; then
+        mime="$(file -b --mime-type "$tmp" 2>/dev/null)"
+        case "$mime" in
+          image/jpeg) ext=jpg ;;
+          image/png)  ext=png ;;
+          image/gif)  ext=gif ;;
+          image/webp) ext=webp ;;
+          image/*)    ext="${mime##*/}" ;;
+          *)  ext="" ;;   # 200 but not an image (e.g. login page) -> session issue
+        esac
+        if [ -n "$ext" ]; then
+          mv -f "$tmp" "$destdir/$base.$ext"
+          return 0
+        fi
+      else
+        # HTTP 200 + empty body = the image is 0 bytes at the source. This is
+        # deterministic, so DON'T re-login/hammer the server; one quick re-check
+        # (no login) then record it as broken and move on.
+        empties=$((empties + 1))
+        rm -f "$tmp"
+        if [ "$empties" -ge 2 ]; then
+          log "    SERVER-EMPTY (0 bytes at source, unrecoverable): $url"
+          printf '%s\n' "$url" >> "$BROKENLIST"
+          return 1
+        fi
+        sleep 1
+        continue
       fi
     fi
-    # classify the failure. "HTTP 200 with an empty body" = the image is 0 bytes
-    # on the server (broken/missing source); anything else is transient/session.
-    if ! { [ "$cexit" -eq 0 ] && [ "$code" = "200" ] && [ ! -s "$tmp" ]; }; then
-      allempty=0
-    fi
+    # transient: connection error / non-200 / 200-but-not-an-image (session) ->
+    # re-login and back off, then retry.
     rm -f "$tmp"
     log "    retry $attempt for $token (http=$code curl=$cexit, re-login)"
     login
     sleep $((attempt * 2))
   done
-  if [ "$allempty" -eq 1 ]; then
-    # every attempt returned 200 + 0 bytes, even right after a fresh login ->
-    # the photo is empty on the server and cannot be downloaded by anyone.
-    log "    SERVER-EMPTY (0 bytes at source, unrecoverable): $url"
-    printf '%s\n' "$url" >> "$BROKENLIST"
-  else
-    log "    ! failed after retries: $url"
-    printf '%s\n' "$url" >> "$FAILLIST"
-  fi
+  log "    ! failed after retries: $url"
+  printf '%s\n' "$url" >> "$FAILLIST"
   return 1
 }
 
@@ -200,10 +205,19 @@ recurse(){
   if [ "$n" -eq 0 ]; then log "  (no photos, no subfolders in $path)"; return; fi
   mkdir -p "$path"
   log "ALBUM:  $path  -> $n photos"
-  local url
+  # list the album's already-downloaded (non-empty) photo tokens ONCE, so the
+  # skip test below is an in-memory lookup instead of a filesystem scan per photo.
+  local -A have=()
+  local fn tk
+  while IFS= read -r fn; do
+    tk="${fn##*_}"; tk="${tk%.*}"; have["$tk"]=1
+  done < <(find "$path" -maxdepth 1 -type f ! -empty -printf '%f\n' 2>/dev/null)
+  local url tok
   while read -r url; do
     [ -z "$url" ] && continue
     idx=$((idx+1))
+    tok="${url##*/}"
+    [ -n "${have[$tok]:-}" ] && continue   # already downloaded (non-empty) -> skip
     download_photo "$url" "$path" "$idx"
   done <<< "$photos"
 }
